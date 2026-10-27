@@ -28,6 +28,9 @@ namespace BetWebApp_2.Data
                 .WithMany()
                 .HasForeignKey(m => m.PickId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            b.Entity<Pick>().Property(p => p.FinalPrediction).HasConversion<string>();
+            b.Entity<MyPick>().Property(m => m.MyPrediction).HasConversion<string>();
         }
 
     }

@@ -1,7 +1,202 @@
 ﻿@page "/"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using BetWebApp_2.Data
+@using BetWebApp_2.Models
+@inject IDbContextFactory<AppDbContext> DbFactory
+
 
 <PageTitle>Home</PageTitle>
 
-<h1>Hello, world!</h1>
+<div class="row">
+    <div class="col-12">
+        <h2 class="fw-bolder">Welcome to PopBet!</h2>
+    </div>
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <AuthorizeView>
+                    <NotAuthorized>
+                        <span>You are not logged in. Please <a class="fw-bolder" href="/login">click here</a> to login</span>
+                    </NotAuthorized>
+                    <Authorized>
+                        <span>Logged in as <b>@context.User.Identity?.Name</b></span>
+                    </Authorized>
+                </AuthorizeView>
+            </div>
+        </div>
+    </div>
+</div>
+<br />
+<h3>Open picks</h3>
 
-Welcome to your new app.
+@if (!string.IsNullOrEmpty(message))
+{
+    <div class="alert @(isError ? "alert-danger" : "alert-success") py-2">@message</div>
+}
+
+@if (picks.Count == 0)
+{
+    <p class="text-muted">There are no open picks available for you right now. 
+        You can follow the status of your tickets <a href="myaccount">here</a>.</p>
+}
+else
+{
+    <div class="list-group mb-3">
+        @foreach (var pick in picks)
+        {
+            <div class="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <div>
+                    <div class="fw-semibold text-break">@pick.PickDescription</div>
+                    <small class="text-muted">@pick.Date.ToString("dd.MM.yyyy HH:mm")</small>
+                </div>
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn @ButtonClass(pick.Id, Prediction.Zero)"
+                            @onclick="() => Select(pick.Id, Prediction.Zero)">
+                        0
+                    </button>
+                    <button type="button" class="btn @ButtonClass(pick.Id, Prediction.One)"
+                            @onclick="() => Select(pick.Id, Prediction.One)">
+                        1
+                    </button>
+                </div>
+            </div>
+        }
+    </div>
+
+    <button class="btn btn-primary" disabled="@(selections.Count == 0)" @onclick="CreateTicket">
+        Create ticket (@selections.Count)
+    </button>
+}
+
+@code{
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthState { get; set; }
+
+    private List<Pick> picks = new();
+    private Dictionary<int, Prediction> selections = new();
+    private string? currentUsername;
+    private string? message;
+    private bool isError;
+
+
+    private void Show(string text, bool error)
+    {
+        message = text;
+        isError = error;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthState!;
+        currentUsername = state.User.Identity?.Name;
+        await LoadPicks();
+    }
+
+    protected async Task LoadPicks()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var userId = await db.Users
+            .Where(u => u.Username == currentUsername)
+            .Select(u => u.Id)
+            .FirstOrDefaultAsync();
+
+        var alreadyBetIds = db.MyPicks
+            .Where(m => m.Ticket.UserId == userId)
+            .Select(m => m.PickId);
+
+        picks = await db.Picks
+            .Where(p => p.FinalPrediction == Prediction.Pending && !alreadyBetIds.Contains(p.Id))
+            .OrderByDescending(p => p.Date)
+            .ToListAsync();
+
+        var openIds = picks.Select(p => p.Id).ToHashSet();
+        foreach (var key in selections.Keys.Where(k => !openIds.Contains(k)).ToList())
+            selections.Remove(key);
+    }
+
+    private string ButtonClass(int pickId, Prediction value) =>
+    selections.TryGetValue(pickId, out var chosen) && chosen == value
+        ? "btn-primary"
+        : "btn-outline-primary";
+
+    private void Select(int pickId, Prediction value)
+    {
+        message = null;
+
+        // clicking the selected outcome again clears it
+        if (selections.TryGetValue(pickId, out var chosen) && chosen == value)
+            selections.Remove(pickId);
+        else
+            selections[pickId] = value;
+    }
+
+    private async Task CreateTicket()
+    {
+        if (selections.Count == 0)
+        {
+            Show("Select at least one outcome.", true);
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Username == currentUsername);
+        if (user is null)
+        {
+            Show("User not found. Please log in again.", true);
+            return;
+        }
+
+        var ids = selections.Keys.ToList();
+        var stillOpen = await db.Picks
+            .Where(p => ids.Contains(p.Id) && p.FinalPrediction == Prediction.Pending)
+            .CountAsync();
+
+        if (stillOpen != ids.Count)
+        {
+            await LoadPicks();
+            Show("Some picks were decided in the meantime and removed. Review your selection and submit again.", true);
+            return;
+        }
+
+        var alreadyBet = await db.MyPicks
+            .AnyAsync(m => m.Ticket.UserId == user.Id && ids.Contains(m.PickId));
+
+        if (alreadyBet)
+        {
+            await LoadPicks();
+            Show("You have already placed a bet on one of these picks.", true);
+            return;
+        }
+
+        var now = DateTime.Now;
+        db.Tickets.Add(new Ticket
+        {
+            UserId = user.Id,
+            Date = now,
+            MyPicks = selections.Select(s => new MyPick
+            {
+                PickId = s.Key,
+                MyPrediction = s.Value,
+                Date = now
+            }).ToList()
+        });
+        await db.SaveChangesAsync();
+
+        selections.Clear();
+        await LoadPicks();
+        Show("Ticket created!", false);
+
+    }
+
+
+}
+
+
+
+

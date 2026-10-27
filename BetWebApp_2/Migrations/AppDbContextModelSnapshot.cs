@@ -26,11 +26,9 @@ namespace BetWebApp_2.Migrations
                     b.Property<DateTime>("Date")
                         .HasColumnType("TEXT");
 
-                    b.Property<int?>("FinalPrediction")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("MyPrediction")
-                        .HasColumnType("INTEGER");
+                    b.Property<string>("MyPrediction")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
 
                     b.Property<int>("PickId")
                         .HasColumnType("INTEGER");
@@ -54,6 +52,10 @@ namespace BetWebApp_2.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<DateTime>("Date")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FinalPrediction")
+                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<string>("PickDescription")

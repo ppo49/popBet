@@ -1,7 +1,54 @@
 ﻿@page "/myaccount"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using BetWebApp_2.Data
+@using BetWebApp_2.Models
+@inject IDbContextFactory<AppDbContext> DbFactory
 
 <h3>MyAccount</h3>
 
-@code {
+<div class="col-12">
+    <AuthorizeView>
+        <NotAuthorized>
+            <span>You are not logged in. Please <a class="fw-bolder" href="/login">click here</a> to login</span>
+        </NotAuthorized>
+        <Authorized>
+            <p>Username: <b>@context.User.Identity?.Name</b></p>
+            <p>Role:</p>
+        </Authorized>
+    </AuthorizeView>
+</div>
 
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+
+    private List<User> users = new();
+    private string? username;
+    private string? role;
+    private string? password;
+    private string? message;
+    private bool isError;
+
+    private void Show(string text, bool error)
+    {
+        message = text;
+        isError = error;
+    }
+
+    private async Task LoadUser()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        users = await db.Users.OrderBy(u => u.Username).ToListAsync();
+    }
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthState!;
+        username = state.User.Identity?.Name;
+        await LoadUser();
+    }
 }

@@ -1,6 +1,6 @@
 ﻿<div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
-        <a class="navbar-brand" href="">BetWebApp_2</a>
+        <a class="navbar-brand" href="">PopBet</a>
     </div>
 </div>
 
@@ -16,11 +16,15 @@
 
         <AuthorizeView Roles="Admin,Standard">
            <Authorized>
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="account">Account</NavLink>
+                <div class="nav-item px-3 ">
+                    <NavLink class="nav-link" href="myaccount">
+                        <span class="bi bi-person-nav-menu" aria-hidden="true"></span> My account
+                    </NavLink>
                 </div>
                 <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="leaderboard">Leaderboard</NavLink>
+                    <NavLink class="nav-link" href="leaderboard">
+                        <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span>Leaderboard
+                    </NavLink>
                 </div>
            </Authorized>
         </AuthorizeView>
@@ -28,10 +32,14 @@
         <AuthorizeView Roles="Admin">
             <Authorized>
                 <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="admin/picks">Manage Picks</NavLink>
+                    <NavLink class="nav-link" href="admin/picks">
+                        <span class="bi bi-plus-square-nav-menu" aria-hidden="true"></span>Manage picks
+                    </NavLink>
                 </div>
                 <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="admin/users">Manage Users</NavLink>
+                    <NavLink class="nav-link" href="admin/users">
+                        <span class="bi bi-person-vcard-nav-menu" aria-hidden="true"></span> Manage Users
+                        </NavLink>
                 </div>
             </Authorized>
         </AuthorizeView>

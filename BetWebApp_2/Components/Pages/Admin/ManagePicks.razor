@@ -1,8 +1,210 @@
 ﻿@page "/admin/picks"
 @rendermode InteractiveServer
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.EntityFrameworkCore
+@using BetWebApp_2.Data
+@using BetWebApp_2.Models
+@inject IDbContextFactory<AppDbContext> DbFactory
 
-<h3>ManagePicks</h3>
+<h3>Manage Picks</h3>
+
+@if (!string.IsNullOrEmpty(message))
+{
+    <div class="alert @(isError ? "alert-danger" : "alert-success") py-2">@message</div>
+}
+
+<div class="table-responsive">
+    <table class="table table-bordered border-primary table-sm align-middle">
+        <thead>
+            <tr>
+                <th scope="col">Date</th>
+                <th scope="col">Pick description</th>
+                <th scope="col">Result</th>
+                <th scope="col">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var pick in picks)
+            {
+                var isEditing = editingId == pick.Id;
+                <tr>
+                    <td class="text-nowrap">@pick.Date.ToString("dd.MM.yyyy HH:mm")</td>
+                    <td class="text-break">
+                        @if (isEditing)
+                        {
+                            <input class="form-control form-control-sm" @bind="editText" @bind:event="oninput" />
+                        }
+                        else
+                        {
+                            @pick.PickDescription
+                        }
+                    </td>
+                    <td>
+                        @if (pick.IsDecided)
+                        {
+                            <span>@Label(pick.FinalPrediction)</span>
+                        }
+                        else
+                        {
+                            <span>Pending</span>
+                        }
+                    </td>
+                    <td>
+                        @if (isEditing)
+                        {
+                            <div class="d-flex gap-1">
+                                <button class="btn btn-sm btn-primary text-nowrap" @onclick="SaveEdit">Save</button>
+                                <button class="btn btn-sm btn-outline-secondary text-nowrap" @onclick="CancelEdit">Cancel</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="d-flex gap-1">
+                                <select class="form-select form-select-sm w-auto" @bind="results[pick.Id]">
+                                    @foreach (var p in Enum.GetValues<Prediction>())
+                                    {
+                                        <option value="@p">@Label(p)</option>
+                                    }
+                                </select>
+                                <button class="btn btn-sm btn-outline-primary text-nowrap" @onclick="() => SaveResult(pick.Id)">Save result</button>
+                                @if (!pickedIds.Contains(pick.Id))
+                                {
+                                    <button class="btn btn-sm btn-outline-secondary text-nowrap" @onclick="() => StartEdit(pick)">Edit</button>
+                                }
+                            </div>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+<h5 class="mt-4">Add new pick</h5>
+
+<EditForm Model="newPick" OnValidSubmit="AddPick" class="col-lg-4">
+    <DataAnnotationsValidator />
+
+    <div class="mb-3">
+        <label>Pick description</label>
+        <InputText @bind-Value="newPick.PickDescription" class="form-control" placeholder=" Player over 4.5 points" />
+        <ValidationMessage For="() => newPick.PickDescription" />
+    </div>
+    <button type="submit" class="btn btn-primary">Add pick</button>
+</EditForm>
 
 @code {
+    private List<Pick> picks = new();
+    private Dictionary<int, Prediction> results = new();
+    private NewPickModel newPick = new();
 
+    private int? editingId;
+    private string editText = "";
+
+    private string? message;
+    private bool isError;
+
+    private HashSet<int> pickedIds = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPicks();
+    }
+
+    private async Task LoadPicks()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        picks = await db.Picks.OrderByDescending(p => p.Date).ToListAsync();
+        pickedIds = (await db.MyPicks.Select(m => m.PickId).Distinct().ToListAsync()).ToHashSet();
+        results = picks.ToDictionary(p => p.Id, p => p.FinalPrediction);
+    }
+
+    private static string Label(Prediction p) => p switch
+    {
+        Prediction.Zero => "0",
+        Prediction.One => "1",
+        _ => "Pending"
+    };
+
+    private async Task AddPick()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        db.Picks.Add(new Pick
+        {
+            PickDescription = newPick.PickDescription.Trim(),
+            Date = DateTime.Now
+        });
+        await db.SaveChangesAsync();
+
+        newPick = new();
+        await LoadPicks();
+        Show("Pick added.", false);
+    }
+
+    private async Task SaveResult(int pickId)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var pick = await db.Picks.FindAsync(pickId);
+        if (pick is null) return;
+
+        pick.FinalPrediction = results[pickId];
+        await db.SaveChangesAsync();
+
+        await LoadPicks();
+        Show($"Result saved: {Label(pick.FinalPrediction)}.", false);
+    }
+
+    private void StartEdit(Pick pick)
+    {
+        editingId = pick.Id;
+        editText = pick.PickDescription;
+        message = null;
+    }
+
+    private void CancelEdit()
+    {
+        editingId = null;
+    }
+
+    private async Task SaveEdit()
+    {
+        var text = editText.Trim();
+        if (text.Length == 0 || text.Length > 200)
+        {
+            Show("Description must be between 1 and 200 characters.", true);
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var pick = await db.Picks.FindAsync(editingId);
+
+        if (await db.MyPicks.AnyAsync(m => m.PickId == pick.Id))
+        {
+            Show("This pick already has bets, so its description can't be edited.", true);
+            return;
+        }
+
+
+        if (pick is null) return;
+
+        pick.PickDescription = text;
+        await db.SaveChangesAsync();
+
+        editingId = null;
+        await LoadPicks();
+        Show("Description updated.", false);
+    }
+
+    private void Show(string text, bool error)
+    {
+        message = text;
+        isError = error;
+    }
+
+    private class NewPickModel
+    {
+        [Required(ErrorMessage = "Please provide a description")]
+        [StringLength(200, ErrorMessage = "Description can be at most 200 characters")]
+        public string PickDescription { get; set; } = "";
+    }
 }

@@ -11,8 +11,6 @@ namespace BetWebApp_2.Models
         public Ticket Ticket { get; set; } = null!;
 
         public Prediction MyPrediction { get; set; }
-        public Prediction? FinalPrediction { get; set; }
-
         public DateTime Date { get; set; }
     }
 }

@@ -1,8 +1,157 @@
 ﻿@page "/admin/users"
 @rendermode InteractiveServer
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using BetWebApp_2.Data
+@using BetWebApp_2.Models
+@using BetWebApp_2.Services
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject PasswordService Passwords
 
-<h3>ManageUsers</h3>
+<h3>Manage Users</h3>
+
+@if (!string.IsNullOrEmpty(message))
+{
+    <div class="alert @(isError ? "alert-danger" : "alert-success") py-2">@message</div>
+}
+
+<div class="table-responsive">
+    <table class="table table-bordered border-primary table-sm">
+        <thead>
+            <tr>
+                <th scope="col">Username</th>
+                <th scope="col">Role</th>
+                <th scope="col"></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var user in users)
+            {
+                var isSelf = user.Username == currentUsername;
+                <tr>
+                    <td>@user.Username @(isSelf ? "(you)" : "")</td>
+                    <td>@user.Role</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary text-nowrap"
+                                disabled="@isSelf" @onclick="() => ChangeRole(user.Id)">
+                            Change role
+                        </button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+
+<EditForm Model="newUser" OnValidSubmit="AddUser" class="col-lg-4">
+    <DataAnnotationsValidator />
+
+    <div class="mb-3">
+        <label>Username</label>
+        <InputText @bind-Value="newUser.Username" class="form-control" placeholder="Username" />
+        <ValidationMessage For="() => newUser.Username" />
+    </div>
+    <div class="mb-3">
+        <label>Password</label>
+        <InputText type="Password" @bind-Value="newUser.Password" class="form-control" placeholder="Password" />
+        <ValidationMessage For="() => newUser.Password" />
+    </div>
+    <div class="mb-3">
+        <label>Role</label>
+        <InputSelect @bind-Value="newUser.Role" class="form-select">
+            @foreach (var role in Enum.GetValues<UserRole>())
+            {
+                <option value="@role">@role</option>
+            }
+        </InputSelect>
+    </div>
+    <button type="submit" class="btn btn-primary">Add new user</button>
+</EditForm>
 
 @code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+
+    private List<User> users = new();
+    private NewUserModel newUser = new();
+    private string? currentUsername;
+    private string? message;
+    private bool isError;
+
+    private class NewUserModel
+    {
+        [Required(ErrorMessage = "Please provide a username")]
+        [StringLength(20)]
+        public string Username { get; set; } = "";
+
+        [Required(ErrorMessage = "Please provide a password")]
+        [StringLength(100, MinimumLength = 6, ErrorMessage = "Password must be at least 6 characters")]
+        public string Password { get; set; } = "";
+
+        public UserRole Role { get; set; } = UserRole.Standard;
+    }
+
+    private void Show(string text, bool error)
+    {
+        message = text;
+        isError = error;
+    }
+
+    private async Task LoadUsers()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        users = await db.Users.OrderBy(u => u.Username).ToListAsync();
+    }
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthState!;
+        currentUsername = state.User.Identity?.Name;
+        await LoadUsers();
+    }
+
+    private async Task ChangeRole(int userId)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var user = await db.Users.FindAsync(userId);
+        if (user is null) return;
+
+        if(user.Username == currentUsername || user.Id == 1)
+        {
+            Show("You cannot change this users role", true);
+            return;
+        }
+
+        user.Role = user.Role == UserRole.Admin ? UserRole.Standard : UserRole.Admin;
+        await db.SaveChangesAsync();
+
+        await LoadUsers();
+        Show($"{user.Username} is now {user.Role}", false);
+    }
+
+    private async Task AddUser()
+    {
+        var name = newUser.Username.Trim();
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        if (await db.Users.AnyAsync(u => u.Username.ToLower() == name.ToLower()))
+        {
+            Show("That username is already taken.", true);
+            return;
+        }
+
+        var user = new User { Username = name, Role = newUser.Role };
+        user.PasswordHash = Passwords.Hash(user, newUser.Password);
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        newUser = new();
+        await LoadUsers();
+        Show($"User {name} created.", false);
+    }
+
 
 }

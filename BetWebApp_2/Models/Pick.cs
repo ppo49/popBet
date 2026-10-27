@@ -7,5 +7,7 @@ namespace BetWebApp_2.Models
         [Required]
         public string PickDescription { get; set; } = "";
         public DateTime Date {  get; set; }
+        public Prediction FinalPrediction { get; set; } = Prediction.Pending;
+        public bool IsDecided => FinalPrediction != Prediction.Pending;
     }
 }
