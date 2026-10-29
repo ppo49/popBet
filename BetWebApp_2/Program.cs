@@ -12,12 +12,20 @@ namespace BetWebApp_2
     {
         public static void Main(string[] args)
         {
-
             var builder = WebApplication.CreateBuilder(args);
+
             builder.Services.AddRazorComponents()
                 .AddInteractiveServerComponents();
 
-            var dbPath = Path.Combine(builder.Environment.ContentRootPath, "app.db");
+            var dbFileName = builder.Configuration.GetConnectionString("DefaultConnection")
+                ?? "app.db";
+
+            var dataFolder = Path.Combine(AppContext.BaseDirectory, "data");
+            if (!Directory.Exists(dataFolder))
+            {
+                Directory.CreateDirectory(dataFolder);
+            }
+            var absoluteDbPath = Path.Combine(dataFolder, dbFileName);
 
             builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
                 .AddCookie(options =>
@@ -28,11 +36,13 @@ namespace BetWebApp_2
                     options.ExpireTimeSpan = TimeSpan.FromMinutes(30);
                     options.SlidingExpiration = true;
                 });
+
             builder.Services.AddSingleton<PasswordService>();
             builder.Services.AddAuthorization();
             builder.Services.AddCascadingAuthenticationState();
+
             builder.Services.AddDbContextFactory<AppDbContext>(options =>
-                options.UseSqlite($"Data Source={dbPath}"));
+                options.UseSqlite($"Data Source={absoluteDbPath}"));
 
             var app = builder.Build();
 
@@ -41,7 +51,16 @@ namespace BetWebApp_2
                 var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
                 using var db = factory.CreateDbContext();
                 db.Database.Migrate();
-                
+
+                var adminPassword = app.Configuration["Seed:AdminPassword"];
+                if (!string.IsNullOrEmpty(adminPassword) && !db.Users.Any(u => u.Role == UserRole.Admin))
+                {
+                    var passwords = scope.ServiceProvider.GetRequiredService<PasswordService>();
+                    var admin = new User { Username = "admin", Role = UserRole.Admin };
+                    admin.PasswordHash = passwords.Hash(admin, adminPassword);
+                    db.Users.Add(admin);
+                    db.SaveChanges();
+                }
             }
 
             if (!app.Environment.IsDevelopment())
@@ -51,8 +70,6 @@ namespace BetWebApp_2
             }
 
             app.UseHttpsRedirection();
-
-            app.UseHttpsRedirection();
             app.UseStaticFiles();
             app.UseAuthentication();
             app.UseAuthorization();
@@ -60,7 +77,6 @@ namespace BetWebApp_2
 
             app.MapRazorComponents<App>()
                 .AddInteractiveServerRenderMode();
-
 
             app.Run();
         }

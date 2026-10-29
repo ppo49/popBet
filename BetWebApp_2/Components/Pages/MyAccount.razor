@@ -9,46 +9,123 @@
 
 <h3>MyAccount</h3>
 
-<div class="col-12">
-    <AuthorizeView>
-        <NotAuthorized>
-            <span>You are not logged in. Please <a class="fw-bolder" href="/login">click here</a> to login</span>
-        </NotAuthorized>
-        <Authorized>
-            <p>Username: <b>@context.User.Identity?.Name</b></p>
-            <p>Role:</p>
-        </Authorized>
-    </AuthorizeView>
-</div>
+@if (user is null)
+{
+    <p class="text-muted">Loading account...</p>
+}
+else
+{
+    <div class="card mb-4">
+        <div class="card-body">
+            <div><span>Username:</span> <b>@user.Username</b></div>
+            <div><span>Role:</span> <b>@user.Role</b></div>
+        </div>
+    </div>
+
+    <h4>My tickets</h4>
+
+    @if (tickets.Count == 0)
+    {
+        <p class="text-muted">You haven't created any tickets yet. <a href="/">Go to the open picks</a>.</p>
+    }
+
+    @foreach (var ticket in tickets)
+    {
+        var status = StatusOf(ticket);
+        <div class="mb-3">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <span>Ticket #@ticket.Id &middot; @ticket.Date.ToString("dd.MM.yyyy") &middot; @status</span>
+            </div>
+            <div class="table-responsive border-primary ">
+                <table class="table table-bordered border-primary table-sm">
+                    <thead>
+                        <tr>
+                            <th scope="col">Pick</th>
+                            <th scope="col">My prediction</th>
+                            <th scope="col">Result</th>
+                            <th scope="col">Final</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var m in ticket.MyPicks)
+                        {
+                            <tr>
+                                <td class="text-break">@m.Pick.PickDescription</td>
+                                <td>@Label(m.MyPrediction)</td>
+                                <td>@Label(m.Pick.FinalPrediction)</td>
+                                <td>
+                                    @if (!m.Pick.IsDecided)
+                                    {
+                                        <span>Pending</span>
+                                    }
+                                    else if (m.MyPrediction == m.Pick.FinalPrediction)
+                                    {
+                                        <span>Won</span>
+                                    }
+                                    else
+                                    {
+                                        <span>Lost</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+}
 
 @code {
     [CascadingParameter]
     private Task<AuthenticationState>? AuthState { get; set; }
 
-    private List<User> users = new();
-    private string? username;
-    private string? role;
-    private string? password;
-    private string? message;
-    private bool isError;
+    private User? user;
+    private List<Ticket> tickets = new();
 
-    private void Show(string text, bool error)
-    {
-        message = text;
-        isError = error;
-    }
-
-    private async Task LoadUser()
-    {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        users = await db.Users.OrderBy(u => u.Username).ToListAsync();
-    }
-
+    private enum TicketStatus { Pending, Won, Lost }
 
     protected override async Task OnInitializedAsync()
     {
         var state = await AuthState!;
-        username = state.User.Identity?.Name;
-        await LoadUser();
+        var username = state.User.Identity?.Name;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        user = await db.Users.FirstOrDefaultAsync(u => u.Username == username);
+        if (user is null) return;
+
+        tickets = await db.Tickets
+            .Where(t => t.UserId == user.Id)
+            .Include(t => t.MyPicks)
+                .ThenInclude(m => m.Pick)
+            .OrderByDescending(t => t.Date)
+            .ToListAsync();
+
     }
+
+    private static string Label(Prediction p) => p switch
+    {
+        Prediction.Zero => "0",
+        Prediction.One => "1",
+        _ => "Pending"
+    };
+
+    private static TicketStatus StatusOf(Ticket t)
+    {
+        if (t.MyPicks.Any(m => m.Pick.IsDecided && m.MyPrediction != m.Pick.FinalPrediction))
+            return TicketStatus.Lost;
+        if (t.MyPicks.Any(m => !m.Pick.IsDecided))
+            return TicketStatus.Pending;
+        return TicketStatus.Won;
+    }
+
+    private static string StatusClass(TicketStatus s) => s switch
+    {
+        TicketStatus.Won => "bg-success",
+        TicketStatus.Lost => "bg-danger",
+        _ => "bg-secondary"
+    };
+
+
 }

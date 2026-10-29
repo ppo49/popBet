@@ -1,5 +1,5 @@
 html, body {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-family: 'Berlin Sans FB', Helvetica, Arial, sans-serif;
 }
 
 a, .btn-link {
@@ -48,4 +48,27 @@ h1:focus {
 
 .darker-border-checkbox.form-check-input {
     border-color: #929292;
+}
+
+
+.page {
+    min-height: 100vh;
+}
+
+main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.content {
+    flex: 1;
+}
+
+.partner-footer {
+    padding: 0.75rem 0;
+    text-align: center;
+    border-top: 1px solid #d6d5d5;
+    color: #6c757d;
+    font-size: 0.85rem;
 }
